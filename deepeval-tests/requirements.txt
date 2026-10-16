@@ -1,3 +1,4 @@
 deepeval>=2.0.0
+ollama>=0.6.0
 requests>=2.31.0
 pytest>=7.4.0
