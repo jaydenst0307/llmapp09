@@ -2,9 +2,53 @@
 Shared fixtures and configuration for deepeval LLM evaluation tests.
 """
 
+import re
+
 import pytest
 from deepeval.metrics import GEval
+from deepeval.models import OllamaModel
+from deepeval.models.llms.ollama_model import retry_ollama
 from deepeval.test_case import LLMTestCaseParams
+
+
+# ---------------------------------------------------------------------------
+# Ollama Cloud models (e.g. gemma4:31b) wrap JSON in ```json fences even when a
+# format schema is given, which DeepEval's OllamaModel can't parse. Strip them.
+# ---------------------------------------------------------------------------
+
+_FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$")
+
+
+def _parse(content, schema):
+    if schema is None:
+        return content
+    return schema.model_validate_json(_FENCE.sub("", content))
+
+
+def _chat_kwargs(self, prompt, schema, audio):
+    return dict(
+        model=self.name,
+        messages=self._prompt_messages(prompt, audio),
+        format=schema.model_json_schema() if schema else None,
+        options={"temperature": self.temperature, **self.generation_kwargs},
+    )
+
+
+@retry_ollama
+def _generate(self, prompt, schema=None, audio=None):
+    response = self.load_model().chat(**_chat_kwargs(self, prompt, schema, audio))
+    return _parse(response.message.content, schema), 0
+
+
+@retry_ollama
+async def _a_generate(self, prompt, schema=None, audio=None):
+    client = self.load_model(async_mode=True)
+    response = await client.chat(**_chat_kwargs(self, prompt, schema, audio))
+    return _parse(response.message.content, schema), 0
+
+
+OllamaModel.generate = _generate
+OllamaModel.a_generate = _a_generate
 
 
 # ---------------------------------------------------------------------------
